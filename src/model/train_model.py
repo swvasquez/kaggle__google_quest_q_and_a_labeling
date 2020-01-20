@@ -93,7 +93,7 @@ class BertForQUEST(transformers.BertPreTrainedModel):
 
 def callback(redis_db, model, device):
     dataset = QUESTDataset(redis_db)
-    batch_size = 50
+    batch_size = 30
     trainloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                               num_workers=0)
 
@@ -110,7 +110,6 @@ def callback(redis_db, model, device):
             print(offset)
         for idx, field in enumerate(dataset.target):
             train = np.array(json.loads(redis_db.get(field)))
-            print(train.shape, predicted[:, idx].shape)
             sprmn = scipy.stats.spearmanr(train, predicted[:, idx])
             spearman.append(sprmn)
     ssum = sum(v[0] for v in spearman) / 30
@@ -119,6 +118,8 @@ def callback(redis_db, model, device):
 
 
 if __name__ == '__main__':
+
+    # Load configuration file.
     paths = project_paths()
     root_path = paths['root']
     config_path = paths['config']
@@ -128,55 +129,80 @@ if __name__ == '__main__':
 
     save_path = root_path / config['save']
 
-    torch.cuda.empty_cache()
+    # Get training parameters.
+    BATCH_SIZE = int(config['batch_size'])
+    GPU_CAP = int(config['gpu_capacity'])
+    LEARNING_RATE = float(config['learning_rate'])
+    EPOCHS = int(config['epochs'])
+
+    # Use GPU if possible.
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
+    print(f"Using {device}.")
 
+    # Connect to the Redis database that feeds the dataset object.
     r = redis_cnxn()
     dataset = QUESTDataset(r)
-    trainloader = torch.utils.data.DataLoader(dataset, batch_size=6,
+    print(GPU_CAP)
+    trainloader = torch.utils.data.DataLoader(dataset, batch_size=GPU_CAP,
                                               shuffle=True, num_workers=0)
-
+    # Choose model - BERT or DistilBERT
     model_name = 'distilbert-base-uncased'
     model = DistilBertForQUEST
 
-    config = transformers.DistilBertConfig.from_pretrained(
+    model_config = transformers.DistilBertConfig.from_pretrained(
         model_name,
         output_hidden_states=True,
         num_labels=30
     )
 
-    print(config)
+    print(model_config)
 
-    bnet = model.from_pretrained(model_name, config=config)
+    # Initialize model, loss function, and optimizer.
+    bnet = model.from_pretrained(model_name, config=model_config)
     bnet.to(device)
+    bnet.train()
+    print("Model in training mode:", bnet.training)
+
+    torch.cuda.empty_cache()
     criterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.SGD(bnet.parameters(), lr=0.001, momentum=0.9)
 
-    for epoch in range(1):  # loop over the dataset multiple times
-
+    for epoch in range(EPOCHS):  # loop over the dataset multiple times
+        minibatches = 0
         running_loss = 0.0
+        sample_size = 0
         for i, data in enumerate(trainloader, 0):
             # get the inputs; data is a list of [inputs, labels]
             inputs = data[0].to(device)
             labels = data[1].to(device)
             masks = data[2].to(device)
 
-            # zero the parameter gradients
-            optimizer.zero_grad()
-
+            samples = data[0].shape[0]
             # forward + backward + optimize
+
             outputs = bnet(inputs, attention_mask=masks)
-            loss = criterion(outputs, labels)
+
+            # If the batch size that the GPU can hold is smaller than the
+            # desired batch size, accumulate the gradients before updating
+            # weights.
+            update = BATCH_SIZE // GPU_CAP
+            remainder = (len(dataset) % BATCH_SIZE)
+            if i > len(dataset) - remainder:
+                scale = remainder / samples
+            else:
+                scale = update
+
+            loss = criterion(outputs, labels) / scale
             loss.backward()
-            optimizer.step()
-
-            # print statistics
             running_loss += loss.item()
-            if i % 3 == 2:  # print every 2000 mini-batches
-
+            if i % update == update - 1 or i == len(dataset) - 1:
+                optimizer.step()
+                minibatches += 1
+                # zero the parameter gradients
+                optimizer.zero_grad()
                 print('[%d, %5d] loss: %.3f' %
-                      (epoch + 1, i + 1, running_loss / 3))
+                      (epoch + 1, i + 1, running_loss / (BATCH_SIZE)))
                 running_loss = 0.0
     torch.save(bnet, save_path.resolve().as_posix())
     callback(r, bnet, device)
