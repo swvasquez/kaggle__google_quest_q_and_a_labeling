@@ -1,5 +1,5 @@
 import json
-import datetime
+import psutil
 import subprocess
 import time
 
@@ -21,7 +21,7 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.distilbert = transformers.DistilBertModel(config)
-        # self.pre_classifier = torch.nn.Linear(config.dim, config.dim)
+        self.pre_classifier = torch.nn.Linear(3072, 3072)
         # self.classifier = torch.nn.Linear(config.dim, config.num_labels)
         # self.dropout = torch.nn.Dropout(config.seq_classif_dropout)
         self.classifier = torch.nn.Linear(3072, config.num_labels)
@@ -40,49 +40,65 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         h4 = hidden_states[-3][:, 0].reshape((-1, 1, 768))
         h3 = hidden_states[-4][:, 0].reshape((-1, 1, 768))
         hcat = torch.cat([h3, h4, h5, h6], 2)
-        output = self.classifier(hcat)
+        layer = self.pre_classifier(hcat)
+        layer = torch.nn.ReLU()(layer)
+        output = self.classifier(layer)
 
         return output.reshape((-1, 30))
 
 
+class Callback:
 
-def callback(redis_db, model, device):
-    dataset = QUESTDataset(redis_db)
-    batch_size = 30
-    trainloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                              num_workers=0)
+    def spearman(self, redis_db, model, device)
+        dataset = QUESTDataset(redis_db)
+        batch_size = 30
+        trainloader = torch.utils.data.DataLoader(dataset,
+                                                  batch_size=batch_size,
+                                                  num_workers=0)
 
-    with torch.no_grad():
-        spearman = []
-        predicted = np.zeros((len(dataset), len(dataset.target)))
-        offset = 0
-        for batch in trainloader:
-            output = model(batch[0].to(device), attention_mask=batch[2].to(
-                device))
-            predicted[offset: offset + output.size()[0], :] = \
-                output.cpu().numpy()
-            offset += + output.size()[0]
-            print(offset)
-        for idx, field in enumerate(dataset.target):
-            train = np.array(json.loads(redis_db.get(field)))
-            sprmn = scipy.stats.spearmanr(train, predicted[:, idx])
-            spearman.append(sprmn)
-    ssum = sum(v[0] for v in spearman) / 30
-    print(ssum, spearman)
-    return spearman
+        with torch.no_grad():
+            spearman = []
+            predicted = np.zeros((len(dataset), len(dataset.target)))
+            offset = 0
+            for batch in trainloader:
+                output = model(batch[0].to(device), attention_mask=batch[2].to(
+                    device))
+                predicted[offset: offset + output.size()[0], :] = \
+                    output.cpu().numpy()
+                offset += + output.size()[0]
+                print(offset)
+            for idx, field in enumerate(dataset.target):
+                train = np.array(json.loads(redis_db.get(field)))
+                sprmn = scipy.stats.spearmanr(train, predicted[:, idx])
+                spearman.append(sprmn)
+        ssum = sum(v[0] for v in spearman) / 30
+        print(ssum, spearman)
+        return spearman
+
+    def _gpu_temp(self):
+        command = ['nvidia-smi', '--query-gpu=temperature.gpu',
+                   '--format=csv,noheader']
+        temp = subprocess.run(command, check=True,
+                              stdout=subprocess.PIPE).stdout
+        temp = int(temp.decode('utf-8').strip('\n'))
+        return temp
 
 
-# def pause(seconds):
-#     time.sleep(seconds)
-#     restart = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
-#     print(f"Next epoch starting at {restart.time().strftime('%H:%M:%S')}.")
+    def _core_temps(self):
+        temps = [int(core[1]) for core in psutil.sensors_temperatures()[
+            'coretemp']]
 
-def gpu_temp(device):
-    command = ['nvidia-smi', '--query-gpu=temperature.gpu',
-               '--format=csv,noheader']
-    temp = subprocess.run(command, check=True, stdout=subprocess.PIPE).stdout
-    temp = int(temp.decode('utf-8').strip('\n'))
-    return temp
+        return temps
+
+
+    def cool(self, gpu_max, cpu_max, wait_time):
+        while self._gpu_temp() > gpu_max or any((core > cpu_max for core in
+                                           self._core_temps())):
+            print("Waiting for system to cool down.")
+            print(f"GPU temp: {self._gpu_temp()}")
+            print(f"CPU temps: "
+                  f"{','.join((str(t) for t in self._core_temps()))}")
+            time.sleep(wait_time)
 
 
 if __name__ == '__main__':
@@ -107,7 +123,7 @@ if __name__ == '__main__':
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
     print(f"Using {device}.")
-    gpu_temp(device)
+
     # Connect to the Redis database that feeds the dataset object.
     r = redis_cnxn()
     dataset = QUESTDataset(r)
@@ -136,27 +152,24 @@ if __name__ == '__main__':
     torch.cuda.empty_cache()
     criterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.SGD(bnet.parameters(), lr=0.001, momentum=0.9)
-
-    for epoch in range(EPOCHS):  # loop over the dataset multiple times
-
-        gpu_temp = gpu_temp(device)
-        while gpu_temp > 75:
-            print("GPU temperature is too high.")
-            print("GPU temp:", gpu_temp())
-            gpu_temp = gpu_temp(device)
+    callback = Callback()
+    for epoch in range(EPOCHS):
+        # Check temperatures of GPU and CPU
+        callback.cool(70, 70, 60)
 
         minibatches = 0
         running_loss = 0.0
         sample_size = 0
         for i, data in enumerate(trainloader, 0):
-            # get the inputs; data is a list of [inputs, labels]
+            if i % 1000 == 0:
+                callback.cool(75, 75, 60)
+
+            # Send inputs to GPU if GPU exists.
             inputs = data[0].to(device)
             labels = data[1].to(device)
             masks = data[2].to(device)
 
             samples = data[0].shape[0]
-            # forward + backward + optimize
-
             outputs = bnet(inputs, attention_mask=masks)
 
             # If the batch size that the GPU can hold is smaller than the
@@ -181,5 +194,5 @@ if __name__ == '__main__':
                       (epoch + 1, i + 1, running_loss / (BATCH_SIZE)))
                 running_loss = 0.0
     torch.save(bnet, save_path.resolve().as_posix())
-    callback(r, bnet, device)
+    callback.spearman(r, bnet, device)
     print('Finished Training')
