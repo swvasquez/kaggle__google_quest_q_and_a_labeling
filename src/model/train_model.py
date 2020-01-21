@@ -1,4 +1,7 @@
 import json
+import datetime
+import subprocess
+import time
 
 import numpy as np
 import scipy
@@ -18,10 +21,10 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.distilbert = transformers.DistilBertModel(config)
-        self.pre_classifier = torch.nn.Linear(config.dim, config.dim)
-        self.classifier = torch.nn.Linear(config.dim, config.num_labels)
-        self.dropout = torch.nn.Dropout(config.seq_classif_dropout)
-
+        # self.pre_classifier = torch.nn.Linear(config.dim, config.dim)
+        # self.classifier = torch.nn.Linear(config.dim, config.num_labels)
+        # self.dropout = torch.nn.Dropout(config.seq_classif_dropout)
+        self.classifier = torch.nn.Linear(3072, config.num_labels)
         self.init_weights()
 
     def forward(self, input_ids=None, attention_mask=None, head_mask=None,
@@ -36,59 +39,11 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         h5 = hidden_states[-2][:, 0].reshape((-1, 1, 768))
         h4 = hidden_states[-3][:, 0].reshape((-1, 1, 768))
         h3 = hidden_states[-4][:, 0].reshape((-1, 1, 768))
-        hcat = torch.cat([h3, h4, h5, h6], 1)
-        pool = torch.mean(hcat, 1)
+        hcat = torch.cat([h3, h4, h5, h6], 2)
+        output = self.classifier(hcat)
 
-        pooled = self.dropout(pool)
-        output = self.classifier(pooled)
+        return output.reshape((-1, 30))
 
-        return output
-
-
-class BertForQUEST(transformers.BertPreTrainedModel):
-
-    def __init__(self, config):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-
-        self.bert = transformers.BertModel(config)
-        self.dropout = torch.nn.Dropout(config.hidden_dropout_prob)
-        self.classifier = torch.nn.Linear(config.hidden_size,
-                                          self.config.num_labels)
-        self.init_weights()
-
-    def forward(
-            self,
-            input_ids=None,
-            attention_mask=None,
-            token_type_ids=None,
-            position_ids=None,
-            head_mask=None,
-            inputs_embeds=None,
-            labels=None,
-    ):
-        bert_outputs = self.bert(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-        )
-
-        hidden_states = bert_outputs[2]
-
-        h12 = hidden_states[-1][:, 0].reshape((-1, 1, 768))
-        h11 = hidden_states[-2][:, 0].reshape((-1, 1, 768))
-        h10 = hidden_states[-3][:, 0].reshape((-1, 1, 768))
-        h9 = hidden_states[-4][:, 0].reshape((-1, 1, 768))
-        hcat = torch.cat([h9, h10, h11, h12], 1)
-        pool = torch.mean(hcat, 1)
-
-        pooled = self.dropout(pool)
-        output = self.classifier(pooled)
-
-        return output
 
 
 def callback(redis_db, model, device):
@@ -117,6 +72,19 @@ def callback(redis_db, model, device):
     return spearman
 
 
+# def pause(seconds):
+#     time.sleep(seconds)
+#     restart = datetime.datetime.now() + datetime.timedelta(seconds=seconds)
+#     print(f"Next epoch starting at {restart.time().strftime('%H:%M:%S')}.")
+
+def gpu_temp(device):
+    command = ['nvidia-smi', '--query-gpu=temperature.gpu',
+               '--format=csv,noheader']
+    temp = subprocess.run(command, check=True, stdout=subprocess.PIPE).stdout
+    temp = int(temp.decode('utf-8').strip('\n'))
+    return temp
+
+
 if __name__ == '__main__':
 
     # Load configuration file.
@@ -139,7 +107,7 @@ if __name__ == '__main__':
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
     print(f"Using {device}.")
-
+    gpu_temp(device)
     # Connect to the Redis database that feeds the dataset object.
     r = redis_cnxn()
     dataset = QUESTDataset(r)
@@ -153,7 +121,8 @@ if __name__ == '__main__':
     model_config = transformers.DistilBertConfig.from_pretrained(
         model_name,
         output_hidden_states=True,
-        num_labels=30
+        num_labels=30,
+        sinusoidal_pos_embeds=True
     )
 
     print(model_config)
@@ -169,6 +138,13 @@ if __name__ == '__main__':
     optimizer = torch.optim.SGD(bnet.parameters(), lr=0.001, momentum=0.9)
 
     for epoch in range(EPOCHS):  # loop over the dataset multiple times
+
+        gpu_temp = gpu_temp(device)
+        while gpu_temp > 75:
+            print("GPU temperature is too high.")
+            print("GPU temp:", gpu_temp())
+            gpu_temp = gpu_temp(device)
+
         minibatches = 0
         running_loss = 0.0
         sample_size = 0

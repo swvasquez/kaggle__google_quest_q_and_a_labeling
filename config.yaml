@@ -2,5 +2,5 @@ train: data/train.csv
 save: data/saved_model
 batch_size: 8
 gpu_capacity: 4
-learning_rate: 0.9
-epochs: 3
+learning_rate: 0.8
+epochs: 4
