@@ -21,14 +21,14 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.distilbert = transformers.DistilBertModel(config)
-        self.pre_classifier = torch.nn.Linear(3072, 3072)
+        self.pre_classifier = torch.nn.Linear(3077, 3077)
         # self.classifier = torch.nn.Linear(config.dim, config.num_labels)
-        # self.dropout = torch.nn.Dropout(config.seq_classif_dropout)
-        self.classifier = torch.nn.Linear(3072, config.num_labels)
+        # self.dropout = torch.nn.Dropout(config.seq_cassif_dropout)
+        self.classifier = torch.nn.Linear(3077, config.num_labels)
         self.init_weights()
 
     def forward(self, input_ids=None, attention_mask=None, head_mask=None,
-                inputs_embeds=None, labels=None):
+                inputs_embeds=None, labels=None, features=None):
         distilbert_output = self.distilbert(
             input_ids=input_ids, attention_mask=attention_mask,
             head_mask=head_mask, inputs_embeds=inputs_embeds
@@ -39,7 +39,8 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         h5 = hidden_states[-2][:, 0].reshape((-1, 1, 768))
         h4 = hidden_states[-3][:, 0].reshape((-1, 1, 768))
         h3 = hidden_states[-4][:, 0].reshape((-1, 1, 768))
-        hcat = torch.cat([h3, h4, h5, h6], 2)
+
+        hcat = torch.cat([h3, h4, h5, h6, features.reshape((-1,1,5))], 2)
         layer = self.pre_classifier(hcat)
         layer = torch.nn.ReLU()(layer)
         output = self.classifier(layer)
@@ -49,7 +50,7 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
 
 class Callback:
 
-    def spearman(self, redis_db, model, device)
+    def spearman(self, redis_db, model, device, test_path):
         dataset = QUESTDataset(redis_db)
         batch_size = 30
         trainloader = torch.utils.data.DataLoader(dataset,
@@ -60,9 +61,12 @@ class Callback:
             spearman = []
             predicted = np.zeros((len(dataset), len(dataset.target)))
             offset = 0
-            for batch in trainloader:
-                output = model(batch[0].to(device), attention_mask=batch[2].to(
-                    device))
+            for data in trainloader:
+                inputs = data[0].to(device)
+                features = data[1].to(device)
+                labels = data[2].to(device)
+                masks = data[3].to(device)
+                output = model(inputs, attention_mask=masks, features=features)
                 predicted[offset: offset + output.size()[0], :] = \
                     output.cpu().numpy()
                 offset += + output.size()[0]
@@ -153,6 +157,7 @@ if __name__ == '__main__':
     criterion = torch.nn.BCEWithLogitsLoss()
     optimizer = torch.optim.SGD(bnet.parameters(), lr=0.001, momentum=0.9)
     callback = Callback()
+    #callback.spearman(r, bnet, device)
     for epoch in range(EPOCHS):
         # Check temperatures of GPU and CPU
         callback.cool(70, 70, 60)
@@ -166,11 +171,12 @@ if __name__ == '__main__':
 
             # Send inputs to GPU if GPU exists.
             inputs = data[0].to(device)
-            labels = data[1].to(device)
-            masks = data[2].to(device)
+            features = data[1].to(device)
+            labels = data[2].to(device)
+            masks = data[3].to(device)
 
             samples = data[0].shape[0]
-            outputs = bnet(inputs, attention_mask=masks)
+            outputs = bnet(inputs, attention_mask=masks, features=features)
 
             # If the batch size that the GPU can hold is smaller than the
             # desired batch size, accumulate the gradients before updating
