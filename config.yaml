@@ -5,7 +5,8 @@ batch_size: 8
 gpu_capacity: 4
 gpu_cooldown: 40
 learning_rate: 0.8
-epochs: 3
+epochs: 2
+folds: 3
 
 input:
   - qa_id

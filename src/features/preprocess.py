@@ -114,7 +114,7 @@ def mask_feature(input_dict):
 
     for title, question, answer in zip(title_tks, quest_tks, ans_tks):
         length = len(title) + len(question) + len(answer)
-        mask = [1.0 if (bert_token_size > i >= length) else 0.0 for i
+        mask = [0.0 if (bert_token_size > i >= length) else 1.0 for i
                 in range(0, bert_token_size)]
         masks.append(mask)
 

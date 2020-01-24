@@ -1,85 +1,76 @@
 import json
 
 import torch
+import yaml
 
 from torch.utils import data
 from sklearn.model_selection import KFold
 
-class QuestTrainDataset(data.Dataset):
-    def __init__(self, redis_db, indices=None, splits=None):
+
+class QuestDataset(data.Dataset):
+    def __init__(self, redis_db, features, labels, targets, indices=None):
         self.redis_db = redis_db
-
-        if not indices:
-            self.ids = json.loads(redis_db.get('ids'))
-        else:
-            self.ids = indices
-
-        if not splits:
-            self.splits = [0]
-        else:
-            self.splits = splits
+        self.features = features
+        self.labels = labels
+        self.target = targets
+        self.ids = indices if indices is not None else json.loads(redis_db.get(
+            'train_ids'))
 
     def __len__(self):
         return len(self.ids)
 
     def __getitem__(self, index):
 
-        qa_id = self.ids[index]
-        text = json.loads(self.redis_db.hget(qa_id, 'text'))
-        features = json.loads(self.redis_db.hget(qa_id, 'features'))
-        label = json.loads(self.redis_db.hget(qa_id, 'label'))
-        mask = json.loads(self.redis_db.hget(qa_id, 'mask'))
-        return torch.tensor(text),torch.tensor(features), torch.tensor(
-            label), torch.tensor(mask)
+        qa_id = str(self.ids[index])
+        item = []
 
-class QuestTestDataset(data.dataset)
+        for field in self.features:
+            fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
+            item.append(torch.tensor(fload))
 
-class KfoldQuestDataset:
-    def __init__(self, folds, redis_db):
+        for field in self.labels:
+            lload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
+            item.append(torch.tensor(lload))
+
+        return item
+
+
+class KFoldDataset:
+
+    def __init__(self, config_path, folds, redis_db):
+        with config_path.open(mode='r') as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+
         self.redis_cnxn = redis_db
-        self.ids = json.loads(redis_db.get('ids'))
+        self.features = config['features']
+        self.labels = config['label']
+        self.ids = json.loads(redis_db.get('train_ids'))
+        self.targets = config['target']
 
-        kf =  KFold(n_splits=folds, shuffle=True)
+        self.train_datasets = []
+        self.test_datasets = []
 
-        train_indices = []
-        test_indices = []
-        segments = [0]
+        kf = KFold(n_splits=folds, shuffle=True)
 
-        for train, test in kf.split(self.ids):
-            train_indices += train
-            test_indices += test
-            segments.append(len(train))
+        for train_indices, test_indices in kf.split(self.ids):
+            train_ids = [self.ids[i] for i in train_indices]
+            test_ids = [self.ids[i] for i in test_indices]
+            self.train_datasets.append(
+                QuestDataset(
+                    self.redis_cnxn,
+                    self.features,
+                    self.labels,
+                    self.targets,
+                    train_ids,
+                )
+            )
 
-
-
-        # self.target = ['question_asker_intent_understanding',
-        #                'question_body_critical',
-        #                'question_conversational',
-        #                'question_expect_short_answer',
-        #                'question_fact_seeking',
-        #                'question_has_commonly_accepted_answer',
-        #                'question_interestingness_others',
-        #                'question_interestingness_self',
-        #                'question_multi_intent',
-        #                'question_not_really_a_question',
-        #                'question_opinion_seeking',
-        #                'question_type_choice',
-        #                'question_type_compare',
-        #                'question_type_consequence',
-        #                'question_type_definition',
-        #                'question_type_entity',
-        #                'question_type_instructions',
-        #                'question_type_procedure',
-        #                'question_type_reason_explanation',
-        #                'question_type_spelling',
-        #                'question_well_written',
-        #                'answer_helpful',
-        #                'answer_level_of_information',
-        #                'answer_plausible',
-        #                'answer_relevance',
-        #                'answer_satisfaction',
-        #                'answer_type_instructions',
-        #                'answer_type_procedure',
-        #                'answer_type_reason_explanation',
-        #                'answer_well_written'
-        #                ]
+            self.test_datasets.append(
+                QuestDataset(
+                    self.redis_cnxn,
+                    self.features,
+                    self.labels,
+                    self.targets,
+                    test_ids,
+                )
+            )

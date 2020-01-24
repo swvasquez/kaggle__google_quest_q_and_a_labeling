@@ -17,7 +17,6 @@ def redis_cnxn():
     )
     return r
 
-
 def grouper(iterable, n, fillvalue=None):
     # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx
     args = [iter(iterable)] * n
