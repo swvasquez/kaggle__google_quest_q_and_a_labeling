@@ -120,9 +120,9 @@ def mask_feature(input_dict):
 
     return masks
 
-
 def category_feature(input_dict):
     print("One hot encoding category.")
     category_list = input_dict['category']
     category = one_hot_encode(category_list)
     return category
+
