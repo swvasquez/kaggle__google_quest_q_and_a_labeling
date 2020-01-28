@@ -1,12 +1,13 @@
 train: data/train.csv
 test: data/test.csv
-save: data/saved_model
-batch_size: 8
-gpu_capacity: 4
+save: data/saved_models/
+batch_size: 6
+gpu_capacity_train: 2
+gpu_capacity_test: 50
 gpu_cooldown: 40
 learning_rate: 0.8
 epochs: 2
-folds: 3
+folds: 2
 
 input:
   - qa_id
