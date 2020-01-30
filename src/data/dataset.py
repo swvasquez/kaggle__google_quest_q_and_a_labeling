@@ -2,9 +2,8 @@ import json
 
 import torch
 import yaml
-
-from torch.utils import data
 from sklearn.model_selection import KFold
+from torch.utils import data
 
 
 class QuestDataset(data.Dataset):
@@ -22,17 +21,18 @@ class QuestDataset(data.Dataset):
     def __getitem__(self, index):
 
         qa_id = str(self.ids[index])
-        item = []
-
+        label_item = {}
+        feature_item = {}
         for field in self.features:
             fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
-            item.append(torch.tensor(fload))
+            data_type = torch.long if field == 'input_ids' else torch.float
+            feature_item[field] = torch.tensor(fload, dtype=data_type)
 
         for field in self.labels:
             lload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
-            item.append(torch.tensor(lload))
+            label_item[field] = torch.tensor(lload, dtype=torch.float)
 
-        return item
+        return feature_item, label_item
 
 
 class KFoldDataset:
