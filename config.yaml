@@ -1,13 +1,14 @@
 train: data/train.csv
 test: data/test.csv
 save: data/saved_models/
+load_model: data/saved_models/test_model
 batch_size: 6
 gpu_capacity_train: 2
 gpu_capacity_test: 50
 gpu_cooldown: 40
 learning_rate: 0.8
-epochs: 2
-folds: 2
+epochs: 3
+folds: 3
 
 input:
   - qa_id
@@ -61,6 +62,8 @@ label:
   - target_vector
 
 features:
-  - text
-  - mask
+  - input_ids
+  - attention_mask
   - category
+  - sentence_lengths
+  - newlines

@@ -12,8 +12,8 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         self.pre_classifier = torch.nn.Linear(3082, 3082)
         self.classifier = torch.nn.Linear(3082, config.num_labels)
 
-        self.pre_embedding = torch.nn.Linear(5, 10)
-        self.embedding = torch.nn.Linear(10, 10)
+        self.pre_embedding = torch.nn.Linear(5, 5)
+        self.embedding = torch.nn.Linear(5, 5)
 
         self.init_weights()
 
@@ -23,12 +23,16 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
                 head_mask=None,
                 inputs_embeds=None,
                 labels=None,
-                category=None):
+                category=None,
+                sentence_lengths=None,
+                newlines=None
+                ):
         distilbert_output = self.distilbert(
             input_ids=input_ids,
             attention_mask=attention_mask,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds
+
         )
 
         hidden_states = distilbert_output[1]
@@ -42,9 +46,13 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         embedding = self.embedding(pre_embed)
         embedding = torch.nn.ReLU()(embedding)
 
-        hcat = torch.cat([h3, h4, h5, h6, embedding.reshape((-1, 1, 10))], 2)
+        e = embedding.view(-1, 1, 5)
+        s = sentence_lengths.view(-1, 1, 3)
+        n = newlines.view(-1, 1, 2)
 
-        layer = self.pre_classifier(hcat)
+        cat = torch.cat([h3, h4, h5, h6, e, s, n], 2)
+
+        layer = self.pre_classifier(cat)
         layer = torch.nn.ReLU()(layer)
         output = self.classifier(layer)
 
