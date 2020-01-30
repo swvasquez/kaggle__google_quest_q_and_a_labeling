@@ -1,5 +1,3 @@
-import numpy as np
-
 from transformers import BertTokenizer
 
 
@@ -87,7 +85,7 @@ def target_vector_label(target_dict):
     return label
 
 
-def text_feature(input_dict):
+def input_ids_feature(input_dict):
     print("Creating text input.")
     titles = input_dict['question_title']
     questions = input_dict['question_body']
@@ -97,7 +95,7 @@ def text_feature(input_dict):
     return text
 
 
-def mask_feature(input_dict):
+def attention_mask_feature(input_dict):
     print("Creating attention mask.")
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased',
                                               do_lower_case=True)
@@ -126,3 +124,25 @@ def category_feature(input_dict):
     category = one_hot_encode(category_list)
     return category
 
+def sentence_lengths_feature(input_dict):
+    lengths = []
+    titles = input_dict['question_title']
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+    for title, question, answer in zip(titles, questions, answers):
+
+        title_length = len(title.split())
+        question_length = len(question.split())
+        answer_length = len(answer.split())
+
+        lengths.append([title_length, question_length, answer_length])
+
+    return lengths
+
+def newlines_feature(input_dict):
+    count = []
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+    for question, answer in zip(questions, answers):
+        count.append([question.count('\n'), answer.count('\n')])
+    return count
