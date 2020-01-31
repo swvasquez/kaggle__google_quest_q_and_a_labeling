@@ -146,3 +146,18 @@ def newlines_feature(input_dict):
     for question, answer in zip(questions, answers):
         count.append([question.count('\n'), answer.count('\n')])
     return count
+
+def similarity_feature(input_dict):
+    similarity = []
+    titles = input_dict['question_title']
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    for title, question, answer in zip(titles, questions, answers):
+        qandt = set(title.split()) | set(question.split())
+        answer = set(answer.split())
+        similarity.append([len(qandt & answer)])
+
+    return similarity
+
+

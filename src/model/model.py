@@ -9,12 +9,15 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.distilbert = transformers.DistilBertModel(config)
-        self.pre_classifier = torch.nn.Linear(3082, 3082)
-        self.classifier = torch.nn.Linear(3082, config.num_labels)
+        self.pre_classifier = torch.nn.Linear(3083, 3083)
+        self.classifier = torch.nn.Linear(3083, config.num_labels)
 
         self.pre_embedding = torch.nn.Linear(5, 5)
         self.embedding = torch.nn.Linear(5, 5)
 
+        self.prelu1 = torch.nn.PReLU()
+        self.prelu2 = torch.nn.PReLU()
+        self.prelu3 = torch.nn.PReLU()
         self.init_weights()
 
     def forward(self,
@@ -25,7 +28,8 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
                 labels=None,
                 category=None,
                 sentence_lengths=None,
-                newlines=None
+                newlines=None,
+                similarity=None
                 ):
         distilbert_output = self.distilbert(
             input_ids=input_ids,
@@ -42,18 +46,18 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         h3 = hidden_states[-4][:, 0].reshape((-1, 1, 768))
 
         pre_embed = self.pre_embedding(category)
-        pre_embed = torch.nn.ReLU()(pre_embed)
+        pre_embed = self.prelu1(pre_embed)
         embedding = self.embedding(pre_embed)
-        embedding = torch.nn.ReLU()(embedding)
 
         e = embedding.view(-1, 1, 5)
-        s = sentence_lengths.view(-1, 1, 3)
+        sl = sentence_lengths.view(-1, 1, 3)
         n = newlines.view(-1, 1, 2)
+        s = similarity.view(-1,1,1)
 
-        cat = torch.cat([h3, h4, h5, h6, e, s, n], 2)
-
+        cat = torch.cat([h3, h4, h5, h6, e, sl, s, n], 2)
+        cat = self.prelu2(cat)
         layer = self.pre_classifier(cat)
-        layer = torch.nn.ReLU()(layer)
+        layer = self.prelu3(layer)
         output = self.classifier(layer)
 
         return output.reshape((-1, 30))
