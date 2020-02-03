@@ -1,3 +1,5 @@
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from transformers import BertTokenizer
 
 
@@ -118,19 +120,22 @@ def attention_mask_feature(input_dict):
 
     return masks
 
+
 def category_feature(input_dict):
     print("One hot encoding category.")
     category_list = input_dict['category']
     category = one_hot_encode(category_list)
     return category
 
+
 def sentence_lengths_feature(input_dict):
+    print('Calulating title, question, and answer lengths.')
     lengths = []
+
     titles = input_dict['question_title']
     questions = input_dict['question_body']
     answers = input_dict['answer']
     for title, question, answer in zip(titles, questions, answers):
-
         title_length = len(title.split())
         question_length = len(question.split())
         answer_length = len(answer.split())
@@ -139,7 +144,9 @@ def sentence_lengths_feature(input_dict):
 
     return lengths
 
+
 def newlines_feature(input_dict):
+    print('Counting the number of lines.')
     count = []
     questions = input_dict['question_body']
     answers = input_dict['answer']
@@ -147,17 +154,150 @@ def newlines_feature(input_dict):
         count.append([question.count('\n'), answer.count('\n')])
     return count
 
+
 def similarity_feature(input_dict):
+    print('Calculating word similarity.')
     similarity = []
     titles = input_dict['question_title']
     questions = input_dict['question_body']
     answers = input_dict['answer']
 
     for title, question, answer in zip(titles, questions, answers):
-        qandt = set(title.split()) | set(question.split())
-        answer = set(answer.split())
+        qandt = set(title.lower().split()) | set(question.lower().split())
+        answer = set(answer.lower().split())
         similarity.append([len(qandt & answer)])
 
     return similarity
 
 
+def hyperlinks_feature(input_dict):
+    print('Counting the number of hyperlinks.')
+    links = []
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    for question, answer in zip(questions, answers):
+        counts = [question.count('https://') + question.count('http://'),
+                  answer.count('https://') + answer.count('http://')]
+        links.append(counts)
+
+    return links
+
+
+def first_person_feature(input_dict):
+    print('Counting first-person pronouns.')
+    counts = []
+    words = [' i ', ' me ', ' my ', ' mine ', ' we ', ' us ', ' ours ']
+
+    titles = input_dict['question_title']
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    for title, question, answer in zip(titles, questions, answers):
+        count = [0, 0]
+        for word in words:
+            count[0] += title.lower().count(word)
+            count[0] += question.lower().count(word)
+            count[1] += answer.lower().count(word)
+        counts.append(count)
+
+    return counts
+
+
+def latex_feature(input_dict):
+    print('Detecting the use of mathematical formulas.')
+    maths = []
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    for question, answer in zip(questions, answers):
+        count = [question.count('$') // 2, answer.count('$') // 2]
+        maths.append(count)
+
+    return maths
+
+
+def line_lengths_feature(input_dict):
+    print('Measuring average line length.')
+    lengths = []
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    for question, answer in zip(questions, answers):
+        qlines = question.splitlines()
+        alines = question.splitlines()
+        qmean = sum(len(line) for line in qlines) / len(qlines)
+        amean = sum(len(line) for line in alines) / len(alines)
+
+        lengths.append([qmean, amean])
+
+    return lengths
+
+
+def brackets_feature(input_dict):
+    print('Counting bracket use.')
+    code = []
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+    brackets = ['{', '}', '[', ']', '(', ')']
+    for question, answer in zip(questions, answers):
+        count = [sum(question.count(symbol) for symbol in brackets) // 2,
+                 sum(answer.count(symbol) for symbol in brackets) // 2]
+        code.append(count)
+
+    return code
+
+
+def sentiment_feature(input_dict):
+    print('Measuring sentiment.')
+    sentiments = []
+    titles = input_dict['question_title']
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    nltk.download('vader_lexicon')
+    sid = SentimentIntensityAnalyzer()
+    for title, question, answer in zip(titles, questions, answers):
+        sentiment = [sid.polarity_scores(title)['compound'],
+                     sid.polarity_scores(question)['compound'],
+                     sid.polarity_scores(answer)['compounwd']
+                     ]
+        sentiments.append(sentiment)
+    return sentiments
+
+
+def spell_feature(input_dict):
+    print('Counting words that relating to spelling.')
+    mentions = []
+    words = [' spell ', ' spelled ', ' spells ', ' spelling ', ' grammar ',
+             ' spelt ', ' speller ']
+
+    titles = input_dict['question_title']
+    questions = input_dict['question_body']
+    answers = input_dict['answer']
+
+    for title, question, answer in zip(titles, questions, answers):
+        count = [0, 0, 0]
+        for word in words:
+            count[0] += title.lower().count(word)
+            count[1] += question.lower().count(word)
+            count[2] += answer.lower().count(word)
+        mentions.append(count)
+
+    return mentions
+
+
+def site_feature():
+    pass
+
+
+def hyperlink_to_self_feature():
+    pass
+
+
+def punction_count_feature():
+    pass
+
+
+def question_mark_feature():
+    pass

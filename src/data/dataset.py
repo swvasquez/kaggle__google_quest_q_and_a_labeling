@@ -6,6 +6,13 @@ from sklearn.model_selection import KFold
 from torch.utils import data
 
 
+def normalize(values, means, stdevs):
+    scaled = []
+    for value, mean, stdev in zip(values, means, stdevs):
+        scaled.append((value - mean) / stdev)
+    return scaled
+
+
 class QuestDataset(data.Dataset):
     def __init__(self, redis_db, features, labels, targets, indices=None):
         self.redis_db = redis_db
@@ -23,14 +30,21 @@ class QuestDataset(data.Dataset):
         qa_id = str(self.ids[index])
         label_item = {}
         feature_item = {}
-        for field in self.features:
-            fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
-            data_type = torch.long if field == 'input_ids' else torch.float
-            feature_item[field] = torch.tensor(fload, dtype=data_type)
 
+        for field in self.features['numerical']:
+            fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
+            means = json.loads(self.redis_db.get(f"train_"
+                                                     f"{field}_averages"))
+            stdevs = json.loads(
+                    self.redis_db.get(f"train_{field}_standard_deviations"))
+            fload = normalize(fload, means, stdevs)
+            feature_item[field] = torch.tensor(fload)
+        for field in self.features['categorical']:
+            fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
+            feature_item[field] = torch.tensor(fload)
         for field in self.labels:
             lload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
-            label_item[field] = torch.tensor(lload, dtype=torch.float)
+            label_item[field] = torch.tensor(lload)
 
         return feature_item, label_item
 

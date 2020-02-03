@@ -44,7 +44,7 @@ def spearman(model, device, dataset, dataloader):
                                           predicted[:, col])
             spearman.append(sprmn.correlation)
         avg_spearman = np.average(np.array(spearman))
-        print(avg_spearman, spearman)
+
     return avg_spearman
 
 
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if use_cuda else "cpu")
     print(f"Using {device}.")
-
+    test_dir = root_path / config['load_model']
     for filepath in test_dir.iterdir():
         state_dict_path = filepath.resolve().as_posix()
 
@@ -89,12 +89,12 @@ if __name__ == '__main__':
     ids = json.loads(r.get('train_ids'))
     targets = config['target']
 
-    test_dataset = dataset.QuestDataset(r, features, labels, targets)
+    test_dataset = dataset.QuestDataset(r, features, labels, targets, False)
 
     testloader = torch.utils.data.DataLoader(test_dataset,
                                              batch_size=GPU_CAP_TEST,
                                              shuffle=True,
-                                             num_workers=2
+                                             num_workers=0
                                              )
 
     print(spearman(bnet, device, test_dataset, testloader))

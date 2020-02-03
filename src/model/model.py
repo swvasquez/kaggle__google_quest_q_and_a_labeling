@@ -9,12 +9,12 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.distilbert = transformers.DistilBertModel(config)
-        self.pre_classifier = torch.nn.Linear(3083, 3083)
-        self.classifier = torch.nn.Linear(3083, config.num_labels)
+        self.pre_classifier = torch.nn.Linear(3097, 3097)
+        self.classifier = torch.nn.Linear(3097, config.num_labels)
 
         self.pre_embedding = torch.nn.Linear(5, 5)
         self.embedding = torch.nn.Linear(5, 5)
-
+        self.dropout = torch.nn.Dropout()
         self.prelu1 = torch.nn.PReLU()
         self.prelu2 = torch.nn.PReLU()
         self.prelu3 = torch.nn.PReLU()
@@ -29,7 +29,14 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
                 category=None,
                 sentence_lengths=None,
                 newlines=None,
-                similarity=None
+                similarity=None,
+                hyperlinks=None,
+                first_person=None,
+                latex=None,
+                brackets=None,
+                sentiment=None,
+                spell=None,
+
                 ):
         distilbert_output = self.distilbert(
             input_ids=input_ids,
@@ -52,11 +59,18 @@ class DistilBertForQUEST(transformers.DistilBertPreTrainedModel):
         e = embedding.view(-1, 1, 5)
         sl = sentence_lengths.view(-1, 1, 3)
         n = newlines.view(-1, 1, 2)
-        s = similarity.view(-1,1,1)
+        s = similarity.view(-1, 1, 1)
+        h = hyperlinks.view(-1, 1, 2)
+        fp = first_person.view(-1, 1, 2)
+        l = latex.view(-1, 1, 2)
+        b = brackets.view(-1, 1, 2)
+        se = sentiment.view(-1, 1, 3)
+        sp = spell.view(-1, 1, 3)
 
-        cat = torch.cat([h3, h4, h5, h6, e, sl, s, n], 2)
+        cat = torch.cat([h3, h4, h5, h6, e, sl, s, n, h, fp, l, b, se, sp], 2)
         cat = self.prelu2(cat)
         layer = self.pre_classifier(cat)
+        layer = self.dropout(layer)
         layer = self.prelu3(layer)
         output = self.classifier(layer)
 

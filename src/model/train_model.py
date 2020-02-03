@@ -48,8 +48,17 @@ class Callback:
                 sprmn = scipy.stats.spearmanr(target[:, col],
                                               predicted[:, col])
                 spearman.append(sprmn.correlation)
-            avg_spearman = np.average(np.array(spearman))
-            print(avg_spearman, spearman)
+            avg_spearman = np.average(np.nan_to_num(np.array(spearman)))
+
+            display = ''
+            for idx, field in enumerate(dataset.target):
+                left_just = 44 if spearman[idx] < 0 else 45
+                col = f"{field}".ljust(left_just) + f"{spearman[idx]}\n"
+                display += col
+
+            print(f"\naverage: {avg_spearman}")
+            print(display)
+
         return avg_spearman
 
     def _gpu_temp(self):
@@ -86,7 +95,6 @@ class Callback:
 
 
 if __name__ == '__main__':
-    # Initialize and run training/test loops.
 
     # Load configuration file.
     paths = project_paths()
@@ -131,24 +139,38 @@ if __name__ == '__main__':
     print(model_config)
 
     bnet = model.DistilBertForQUEST.from_pretrained(model_name,
-                                                    config=model_config)
+                                                  config=model_config)
+    # Load saved model if desired.
+    test_dir = root_path / config['load_model']
+    state_dict_path = None
+    for filepath in test_dir.iterdir():
+        state_dict_path = filepath.resolve().as_posix()
+    if state_dict_path:
+        print('Loading saved model.')
+        state_dict = torch.load(state_dict_path)
+        bnet.load_state_dict(state_dict)
+
     bnet.to(device)
     bnet.train()
 
-    # Establish cost function and optimizer.
+    # Establish cost function and optimizer. Make sure to move model to
+    # GPU before defining optimizer.
     criterion = torch.nn.BCEWithLogitsLoss()
-    optimizer = torch.optim.SGD(bnet.parameters(), lr=0.001, momentum=0.9)
+    optimizer = torch.optim.Adam(bnet.parameters(), lr=LEARNING_RATE)
 
     callback = Callback()
     fold_spearman = []
-    for fold in range(FOLDS):
 
+    for fold in range(FOLDS):
         # For each fold, reset model parameters and update the dataloaders
         # with new datasets.
-        bnet.init_weights()
+        if fold > 0:
+            bnet.init_weights()
         bnet.train()
+
         train_dataset = train_folds[fold]
         test_dataset = test_folds[fold]
+
         trainloader = torch.utils.data.DataLoader(train_dataset,
                                                   batch_size=GPU_CAP_TRAIN,
                                                   shuffle=True,
@@ -164,7 +186,6 @@ if __name__ == '__main__':
         callback.spearman(bnet, device, test_dataset, testloader)
 
         for epoch in range(EPOCHS):
-
             # Check temperatures of GPU and CPU
             callback.cool(70, 70, 60)
 
@@ -185,7 +206,6 @@ if __name__ == '__main__':
                 for field in labels:
                     labels[field] = labels[field].to(device)
                 label = labels['target_vector']
-
                 samples = label.shape[0]
 
                 outputs = bnet(**features)
@@ -209,13 +229,11 @@ if __name__ == '__main__':
 
                     # Zero the parameter gradients.
                     optimizer.zero_grad()
-
                     print('[Fold %d, Epoch %d, Minibatches %5d] BCE loss: '
                           '%.3f' %
                           (fold + 1, epoch + 1, minibatches + 1,
                            running_loss / (BATCH_SIZE)))
                     running_loss = 0.0
-
                     minibatches += 1
 
             spearman = callback.spearman(bnet, device, test_dataset,
