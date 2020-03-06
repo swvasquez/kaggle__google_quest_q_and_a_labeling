@@ -24,6 +24,7 @@ class Callback:
             spearman = []
             predicted = np.zeros((len(dataset), len(dataset.target)))
             target = np.zeros((len(dataset), len(dataset.target)))
+
             offset = 0
 
             for data in dataloader:
@@ -55,7 +56,7 @@ class Callback:
                 left_just = 44 if spearman[idx] < 0 else 45
                 col = f"{field}".ljust(left_just) + f"{spearman[idx]}\n"
                 display += col
-
+            print(spearman)
             print(f"\naverage: {avg_spearman}")
             print(display)
 
@@ -127,19 +128,15 @@ if __name__ == '__main__':
     train_folds = kfold_dataset.train_datasets
     test_folds = kfold_dataset.test_datasets
 
-    # Initialize model, loss function, and optimizer. Note Huggingface
-    # transformers are in eval mode by default.
-    model_name = 'distilbert-base-uncased'
-    model_config = transformers.DistilBertConfig.from_pretrained(
+    model_name = 'roberta-base'
+    model_config = transformers.RobertaConfig.from_pretrained(
         model_name,
         output_hidden_states=True,
         num_labels=30,
     )
-
     print(model_config)
+    bnet = model.RobertaForQUEST(config=model_config)
 
-    bnet = model.DistilBertForQUEST.from_pretrained(model_name,
-                                                  config=model_config)
     # Load saved model if desired.
     test_dir = root_path / config['load_model']
     state_dict_path = None
@@ -165,7 +162,9 @@ if __name__ == '__main__':
         # For each fold, reset model parameters and update the dataloaders
         # with new datasets.
         if fold > 0:
+            break
             bnet.init_weights()
+
         bnet.train()
 
         train_dataset = train_folds[fold]
@@ -174,12 +173,12 @@ if __name__ == '__main__':
         trainloader = torch.utils.data.DataLoader(train_dataset,
                                                   batch_size=GPU_CAP_TRAIN,
                                                   shuffle=True,
-                                                  num_workers=2
+                                                  num_workers=0
                                                   )
         testloader = torch.utils.data.DataLoader(test_dataset,
                                                  batch_size=GPU_CAP_TEST,
                                                  shuffle=True,
-                                                 num_workers=2
+                                                 num_workers=0
                                                  )
         # Calculate initial score on fold.
         print(f"Calculating untrained score on fold {fold}.")
@@ -189,11 +188,21 @@ if __name__ == '__main__':
             # Check temperatures of GPU and CPU
             callback.cool(70, 70, 60)
 
+            # Shuffle dataset between epochs.
+            train_dataset.shuffle()
             minibatches = 0
             running_loss = 0.0
 
-            for i, data in enumerate(trainloader, 0):
+            # if epoch % 10 == 9:
+            #     LEARNING_RATE = LEARNING_RATE / 10
+            #     for param_group in optimizer.param_groups:
+            #         param_group['lr'] = LEARNING_RATE
+            #
+            # for param_group in optimizer.param_groups:
+            #     print(param_group['lr'])
 
+            for i, data in enumerate(trainloader, 0):
+                # Cool intermitantly.
                 if i % 1000 == 0:
                     callback.cool(75, 75, 60)
 
@@ -206,8 +215,8 @@ if __name__ == '__main__':
                 for field in labels:
                     labels[field] = labels[field].to(device)
                 label = labels['target_vector']
-                samples = label.shape[0]
 
+                # Push data to model.
                 outputs = bnet(**features)
 
                 # If the batch size that the GPU can hold is smaller than the
@@ -216,11 +225,10 @@ if __name__ == '__main__':
                 update = BATCH_SIZE // GPU_CAP_TRAIN
                 remainder = (len(train_dataset) % BATCH_SIZE)
                 if i > len(train_dataset) - remainder:
-                    scale = remainder / samples
+                    rescale = remainder / samples
                 else:
-                    scale = update
-
-                loss = criterion(outputs, label) / scale
+                    rescale = update
+                loss = criterion(outputs, label) / rescale
                 loss.backward()
                 running_loss += loss.item()
 
@@ -238,6 +246,7 @@ if __name__ == '__main__':
 
             spearman = callback.spearman(bnet, device, test_dataset,
                                          testloader)
+            callback.save(bnet, spearman, save_dir)
         fold_spearman.append(spearman)
         callback.save(bnet, spearman, save_dir)
 

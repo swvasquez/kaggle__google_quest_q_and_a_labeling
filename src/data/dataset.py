@@ -1,4 +1,5 @@
 import json
+import random
 
 import torch
 import yaml
@@ -25,6 +26,9 @@ class QuestDataset(data.Dataset):
     def __len__(self):
         return len(self.ids)
 
+    def shuffle(self):
+        random.shuffle(self.ids)
+
     def __getitem__(self, index):
 
         qa_id = str(self.ids[index])
@@ -32,6 +36,7 @@ class QuestDataset(data.Dataset):
         feature_item = {}
 
         for field in self.features['numerical']:
+
             fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
             means = json.loads(self.redis_db.get(f"train_"
                                                      f"{field}_averages"))
@@ -88,3 +93,5 @@ class KFoldDataset:
                     test_ids,
                 )
             )
+
+

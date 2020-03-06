@@ -1,6 +1,8 @@
 """
 This script reads the training data from a csv file, processes the data, and
-then pushes the processed data into Redis.
+then pushes the processed data into Redis. Redis provides a persistent data
+source that doesn't need to be reloaded each time the model is modified (e.g.
+using csv, json, or pickle files as storage).
 """
 
 import csv
@@ -207,6 +209,7 @@ def get_samples(field, count, stdev_frac, redis_db):
     A function to get count samples whose values are outside stdev_frac
     standard deviations.
     """
+
     ids = json.loads(redis_db.get('train_ids'))
     averages = json.loads(redis_db.get('train_target_vector_averages'))
     stdevs = json.loads(redis_db.get(
@@ -229,6 +232,8 @@ def get_samples(field, count, stdev_frac, redis_db):
 
 
 if __name__ == '__main__':
+    # Running this loads the data into Redis. This is not done in the
+    # model training loop and must be run manually.
     paths = project_paths()
     root_path = paths['root']
     config_path = paths['config']
