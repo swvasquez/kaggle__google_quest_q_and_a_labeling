@@ -2,13 +2,13 @@ train: data/train.csv
 test: data/test.csv
 save: data/saved_models/
 load_model: data/saved_models/load_model
-batch_size: 30
-gpu_capacity_train: 1
+batch_size: 32
+gpu_capacity_train: 16
 gpu_capacity_test: 40
 gpu_cooldown: 40
-learning_rate: 0.005
-epochs: 7
-folds: 7
+learning_rate: .001
+epochs: 3
+folds: 1000
 
 input:
   - qa_id
@@ -66,6 +66,7 @@ features:
     - input_ids
     - attention_mask
     - category
+    - host
   numerical:
     - sentence_lengths
     - newlines
@@ -76,3 +77,22 @@ features:
     - brackets
     - sentiment
     - spell
+    - punctuation
+    - question_mark
+    - exclamation
+    - yes_no
+    - numeric_answer
+    - short_keyword
+    - consequence
+    - how
+    - choice
+    - comparison
+    - comma
+    - period
+    - instruction
+    - self_reference
+    - parts_of_speech
+    - language
+    - sonic
+    - reference
+    - word_part
