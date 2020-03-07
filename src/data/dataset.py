@@ -1,3 +1,9 @@
+"""
+PyTorch Dataset whose data is sourced from Redis. A collection of datasets
+are aggregated together using sklearn's KFold method to use in K-fold
+cross-validation.
+"""
+
 import json
 import random
 
@@ -7,27 +13,27 @@ from sklearn.model_selection import KFold
 from torch.utils import data
 
 
-def normalize(values, means, stdevs):
-    scaled = []
-    for value, mean, stdev in zip(values, means, stdevs):
-        scaled.append((value - mean) / stdev)
-    return scaled
-
-
 class QuestDataset(data.Dataset):
     def __init__(self, redis_db, features, labels, targets, indices=None):
         self.redis_db = redis_db
         self.features = features
         self.labels = labels
         self.target = targets
-        self.ids = indices if indices is not None else json.loads(redis_db.get(
-            'train_ids'))
+        self.ids = indices if indices is not None else (
+            json.loads(redis_db.get('train_ids')))
 
-    def __len__(self):
-        return len(self.ids)
+    def normalize(values, means, stdevs):
+        """ Data is normalized before being output by the generator."""
+        scaled = []
+        for value, mean, stdev in zip(values, means, stdevs):
+            scaled.append((value - mean) / stdev)
+        return scaled
 
     def shuffle(self):
         random.shuffle(self.ids)
+
+    def __len__(self):
+        return len(self.ids)
 
     def __getitem__(self, index):
 
@@ -36,13 +42,12 @@ class QuestDataset(data.Dataset):
         feature_item = {}
 
         for field in self.features['numerical']:
-
             fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
             means = json.loads(self.redis_db.get(f"train_"
-                                                     f"{field}_averages"))
+                                                 f"{field}_averages"))
             stdevs = json.loads(
-                    self.redis_db.get(f"train_{field}_standard_deviations"))
-            fload = normalize(fload, means, stdevs)
+                self.redis_db.get(f"train_{field}_standard_deviations"))
+            fload = self.normalize(fload, means, stdevs)
             feature_item[field] = torch.tensor(fload)
         for field in self.features['categorical']:
             fload = json.loads(self.redis_db.hget(qa_id, f"train_{field}"))
@@ -55,6 +60,10 @@ class QuestDataset(data.Dataset):
 
 
 class KFoldDataset:
+    """
+    Splits the data into folds and generates a PyTorch dataset for each
+    split.
+    """
 
     def __init__(self, config_path, folds, redis_db):
         with config_path.open(mode='r') as f:
@@ -74,6 +83,7 @@ class KFoldDataset:
         for train_indices, test_indices in kf.split(self.ids):
             train_ids = [self.ids[i] for i in train_indices]
             test_ids = [self.ids[i] for i in test_indices]
+
             self.train_datasets.append(
                 QuestDataset(
                     self.redis_cnxn,
@@ -93,5 +103,3 @@ class KFoldDataset:
                     test_ids,
                 )
             )
-
-
